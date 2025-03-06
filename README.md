@@ -14,9 +14,10 @@ A web application that combines an LLM-powered chat interface with a collaborati
 ### Canvas (Right Panel)
 - **Markdown Editor**: Collaborative markdown editor with syntax highlighting
 - **Real-time Preview**: Instant rendering of markdown content
-- **Document Enhancement**: AI-powered tools to improve grammar, clarity, and more
+- **Toggle View**: Switch between editor and preview modes to maximize workspace
+- **Optimized View Mode**: Clean document preview with no excessive whitespace
 - **Version History**: Undo capability to revert to previous versions
-- **Export Options**: Download your documents in markdown format
+- **Minimalist Interface**: Clean, distraction-free design with essential controls
 
 ### Integration Capabilities
 - **n8n Webhooks**: Connect to external workflows for research and data enrichment
@@ -115,11 +116,11 @@ The chat interface is located in the left sidebar:
 
 The markdown canvas is located in the main content area:
 
-1. **Editing**: Write or edit markdown content in the editor
-2. **Preview**: Toggle the preview to see the rendered markdown
-3. **Enhancement Tools**: Use the enhancement tools to improve your document
-4. **Undo Changes**: Revert to previous versions with the undo button
-5. **Download**: Download your document when finished
+1. **Document Controls**: Use the toolbar to create new documents, undo changes, or upload files
+2. **Toggle View**: Switch between "Edit" and "View" modes using the toggle buttons
+3. **Editing**: Write or edit markdown content in the editor mode
+4. **Preview**: View the rendered markdown in the preview mode
+5. **Download**: Download your document from the preview mode
 
 ## Configuration
 
@@ -136,12 +137,18 @@ You can configure the application by modifying the following files:
 
 - **components/**: UI components for the application
   - `chat.py`: Implements the chat interface
-  - `canvas.py`: Implements the markdown canvas
+  - `canvas.py`: Implements the markdown canvas with optimized view mode
 - **utils/**: Utility modules for various functionalities
   - `audio_utils.py`: Audio recording and processing
   - `llm_utils.py`: LLM interactions and prompt management
   - `markdown_utils.py`: Markdown parsing and formatting
   - `webhook_utils.py`: n8n webhook integration
+
+### UI Implementation Notes
+
+- **View Mode**: The document preview uses Streamlit's native expander component for optimal layout
+- **CSS Management**: Custom CSS is minimized to avoid conflicts with Streamlit's built-in styling
+- **Component Design**: UI components are designed to work with Streamlit's rendering lifecycle
 
 ### Adding New Features
 
@@ -168,4 +175,11 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - [Streamlit](https://streamlit.io/) for the web interface
 - [LangChain](https://langchain.com/) for LLM interactions
 - [OpenAI](https://openai.com/) for AI models and APIs
-- [n8n](https://n8n.io/) for workflow automation 
+- [n8n](https://n8n.io/) for workflow automation
+
+## Recent Updates
+
+### UI Improvements
+- **Fixed View Mode Whitespace**: Eliminated excessive whitespace in the document preview mode
+- **Improved Layout Consistency**: Enhanced the document viewing experience with better container management
+- **Streamlined CSS**: Reduced CSS complexity for better performance and maintainability 

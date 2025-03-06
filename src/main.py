@@ -40,15 +40,29 @@ st.set_page_config(
 # Custom CSS
 st.markdown("""
 <style>
+    /* Basic layout adjustments */
     .main .block-container {
-        padding-top: 2rem;
-        padding-bottom: 2rem;
+        padding-top: 1rem;
+        padding-bottom: 1rem;
     }
     .stSidebar .block-container {
-        padding-top: 2rem;
+        padding-top: 1rem;
     }
     .stTextArea textarea {
         font-family: monospace;
+    }
+    
+    /* Remove default padding from expanders in view mode */
+    .streamlit-expander {
+        border: none !important;
+        box-shadow: none !important;
+    }
+    .streamlit-expander .streamlit-expanderContent {
+        padding: 0 !important;
+        border: 1px solid #eee;
+        border-radius: 5px;
+        padding: 20px !important;
+        background-color: white;
     }
 </style>
 """, unsafe_allow_html=True)
