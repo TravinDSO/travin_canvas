@@ -7,7 +7,8 @@ text-to-speech capabilities, and research commands. The component creates a
 conversational experience that integrates with the markdown canvas.
 
 Key features:
-- Text-based chat with OpenAI's GPT models
+- Text-based chat with OpenAI's GPT models using function calling
+- Integration with Perplexity AI for search and research capabilities
 - Speech-to-text input using OpenAI's Whisper API
 - Text-to-speech responses using OpenAI's TTS API
 - Support for research commands via n8n webhooks
@@ -70,161 +71,132 @@ class ChatInterface:
         if "edit_confirmed" not in st.session_state:
             st.session_state.edit_confirmed = False
             
-        # Add system message to inform the LLM about document editing capabilities
+        # Add system message to inform the LLM about its capabilities
         self.add_system_message("""
-        You can help the user with their document in a natural, conversational way.
+        You are an AI assistant with two main capabilities:
         
-        When the user asks you to create, format, edit, or modify their document:
-        1. Understand what changes they want to make
-        2. Generate the appropriate content or modifications
-        3. Use the phrase "I'll update the document with:" followed by the content
+        1. Document Editing:
+           When the user asks you to create, format, edit, or modify their document:
+           - Understand what changes they want to make
+           - Generate the appropriate content or modifications
+           - Use the phrase "I'll update the document with:" followed by the content
         
-        For example, if a user says "Create a document about making a PB&J sandwich",
-        you should respond with something like:
+        2. Information Retrieval:
+           You have access to two special functions for retrieving information:
+           - search_with_perplexity: Use this to search the internet for general information and current events
+           - research_with_perplexity: Use this for in-depth research with comprehensive citations
         
-        "I'll update the document with:
+        EXTREMELY IMPORTANT INSTRUCTIONS:
         
-        # How to Make a PB&J Sandwich
+        When the user asks ANY question about:
+        - News or current events
+        - Recent developments or updates
+        - Facts that might have changed since your training
+        - "What is X" or "Tell me about X" questions
+        - Any topic where up-to-date information would be valuable
         
-        ## Ingredients
-        - 2 slices of bread
-        - Peanut butter
-        - Jelly or jam
+        You MUST use one of your search functions rather than responding from your training data.
+        DO NOT try to answer these questions directly - ALWAYS use the appropriate function.
         
-        ## Instructions
-        1. Lay out the bread slices
-        2. Spread peanut butter on one slice
-        3. Spread jelly on the other slice
-        4. Press the slices together
-        5. Enjoy your sandwich!"
+        Examples of when to use search_with_perplexity:
+        - "What are today's top headlines?"
+        - "Tell me about recent developments in AI"
+        - "What is the current situation in Ukraine?"
+        - "Who is the current CEO of Apple?"
+        - "What's the weather like in New York today?"
         
-        The system will detect this pattern and update the document automatically.
+        Examples of when to use research_with_perplexity:
+        - "I need detailed research on climate change impacts"
+        - "Provide a comprehensive analysis of quantum computing"
+        - "Give me an in-depth literature review on cancer treatments"
+        - "What are the scholarly perspectives on consciousness?"
         """)
-    
+        
     def render(self):
-        """Render the chat interface."""
-        st.sidebar.title("Chat Interface")
-        
-        # Display chat messages
-        for message in st.session_state.chat_history:
-            with st.sidebar.chat_message(message["role"]):
-                st.write(message["content"])
-                
-                # If this is the last assistant message and there's a pending edit, show confirmation buttons
-                if (message["role"] == "assistant" and 
-                    st.session_state.pending_edit is not None and 
-                    message == st.session_state.chat_history[-1]):
-                    self._render_edit_confirmation_buttons()
-        
-        # Chat input
-        user_input = st.sidebar.chat_input("Type your message here")
-        
-        # Voice input controls
-        col1, col2 = st.sidebar.columns(2)
-        
-        with col1:
-            if st.button("🎤 Start Recording", disabled=st.session_state.recording):
-                st.session_state.recording = True
-                st.session_state.audio_file = None
-                st.rerun()
-                
-        with col2:
-            if st.button("⏹️ Stop Recording", disabled=not st.session_state.recording):
-                st.session_state.recording = False
-                st.rerun()
-        
-        # Handle recording
-        if st.session_state.recording:
-            st.sidebar.info("Recording... Speak now")
-            audio_file = self.audio_processor.start_recording(max_seconds=10)
-            st.session_state.audio_file = audio_file
-            st.session_state.recording = False
-            st.rerun()
+        """Render the chat interface in the Streamlit sidebar."""
+        with st.sidebar:
+            st.title("Travin Canvas Chat")
             
-        # Process audio file if exists
-        if st.session_state.audio_file and os.path.exists(st.session_state.audio_file):
-            transcript = self.audio_processor.transcribe_audio(st.session_state.audio_file)
-            if transcript:
-                user_input = transcript
-                # Clean up the audio file
-                try:
-                    os.remove(st.session_state.audio_file)
-                except:
-                    pass
-                st.session_state.audio_file = None
-        
-        # Text-to-speech toggle
-        st.sidebar.divider()
-        tts_enabled = st.sidebar.checkbox("Enable Text-to-Speech", value=False)
-        
-        if tts_enabled:
-            voice_options = ["alloy", "echo", "fable", "onyx", "nova", "shimmer"]
-            selected_voice = st.sidebar.selectbox("Select Voice", voice_options)
-        else:
-            selected_voice = "alloy"  # Default voice
-        
-        # Process user input
-        if user_input:
-            # Add user message to chat history
-            st.session_state.chat_history.append({"role": "user", "content": user_input})
+            # Display chat history
+            st.write("### Chat History")
+            chat_container = st.container(height=400)
             
-            # Check for research commands (keeping this explicit command for research)
-            if user_input.lower().startswith("/research"):
-                query = user_input[9:].strip()
-                if query and self.on_research_request:
-                    # Call the research request handler and get the response
-                    response = self.on_research_request(query)
+            with chat_container:
+                for message in st.session_state.chat_history:
+                    role = message["role"]
+                    content = message["content"]
                     
-                    # If no response was returned, provide a default message
-                    if not response:
-                        response = f"Researching: {query}"
-                else:
-                    response = "Please provide a research query after /research"
-            else:
-                # For document editing, we'll analyze the user's intent
-                # Get current document content to provide context to the LLM
-                current_document = self._get_current_document()
-                
-                # Add document context as a system message before generating response
-                self.llm_manager.add_message("system", f"""
-                Current document content:
-                ```
-                {current_document}
-                ```
-                
-                If the user is asking to create, view, format, edit, or modify the document,
-                respond with "I'll update the document with:" followed by the complete content.
-                """)
-                
-                # Generate LLM response
-                response = self.llm_manager.generate_response(prompt=user_input)
-                
-                # Check if the response contains document update indicator
-                if "I'll update the document with:" in response:
-                    # Extract the content after the indicator
-                    parts = response.split("I'll update the document with:", 1)
-                    if len(parts) > 1:
-                        # Get the content part
-                        content_part = parts[1].strip()
+                    if role == "user":
+                        st.markdown(f"**You:** {content}")
+                    elif role == "assistant":
+                        st.markdown(f"**Assistant:** {content}")
                         
-                        # Store the pending edit
-                        st.session_state.pending_edit = content_part
+                        # Check if this is an edit suggestion
+                        if "I'll update the document with:" in content:
+                            # Only show edit confirmation if not already confirmed
+                            if not st.session_state.edit_confirmed:
+                                # Extract the content after the marker
+                                marker = "I'll update the document with:"
+                                marker_index = content.find(marker)
+                                if marker_index != -1:
+                                    edit_content = content[marker_index + len(marker):].strip()
+                                    st.session_state.pending_edit = edit_content
+                                    self._render_edit_confirmation_buttons()
             
-            # Add assistant response to chat history
-            st.session_state.chat_history.append({"role": "assistant", "content": response})
+            # User input area
+            st.write("### Your Message")
             
-            # Text-to-speech if enabled
-            if tts_enabled:
-                audio_file = self.audio_processor.text_to_speech(response, voice=selected_voice)
-                if audio_file:
-                    self.audio_processor.play_audio(audio_file)
-                    # Clean up the audio file
-                    try:
-                        os.remove(audio_file)
-                    except:
-                        pass
+            # Text input
+            user_input = st.text_area("Type your message", key="user_input", height=100)
             
-            st.rerun()
+            # Speech input
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("🎤 Record", use_container_width=True):
+                    st.session_state.recording = True
+                    st.rerun()
+            
+            with col2:
+                if st.button("🧹 Clear Chat", use_container_width=True):
+                    self.clear_chat_history()
+                    st.rerun()
+            
+            # Handle recording state
+            if st.session_state.recording:
+                with st.spinner("Recording... (Click Stop when finished)"):
+                    if st.button("⏹️ Stop Recording", use_container_width=True):
+                        st.session_state.recording = False
+                        
+                        # Process the audio
+                        try:
+                            audio_file = self.audio_processor.stop_recording()
+                            if audio_file:
+                                st.session_state.audio_file = audio_file
+                                
+                                # Transcribe the audio
+                                with st.spinner("Transcribing..."):
+                                    transcription = self.audio_processor.transcribe_audio(audio_file)
+                                    if transcription:
+                                        # Set the transcription as user input
+                                        st.session_state.user_input = transcription
+                                        st.rerun()
+                        except Exception as e:
+                            st.error(f"Error processing audio: {e}")
+                            st.session_state.recording = False
+                    
+                    # Start recording if not already started
+                    if not self.audio_processor.is_recording():
+                        self.audio_processor.start_recording()
+            
+            # Send button
+            if st.button("Send", use_container_width=True, type="primary"):
+                if user_input:
+                    # Process the user input
+                    self.process_user_input(user_input)
+                    
+                    # Clear the input
+                    st.session_state.user_input = ""
+                    st.rerun()
     
     def _render_edit_confirmation_buttons(self):
         """Render confirmation buttons for document edits."""
@@ -283,4 +255,204 @@ class ChatInterface:
         Args:
             content (str): The content of the system message
         """
-        self.llm_manager.add_message("system", content) 
+        self.llm_manager.add_message("system", content)
+    
+    def _should_use_research_mode(self, user_input: str) -> bool:
+        """
+        Determine if research mode should be used for the given input.
+        
+        This method analyzes the user's input to determine if it requires
+        in-depth research rather than just a simple search. It looks for patterns
+        that suggest a need for comprehensive analysis.
+        
+        Args:
+            user_input (str): The user's input message
+            
+        Returns:
+            bool: Whether research mode should be used
+        """
+        # With function calling, we let the LLM decide when to use search vs research
+        # But we can still force research mode for certain queries
+        
+        research_indicators = [
+            "research",
+            "in-depth",
+            "comprehensive",
+            "detailed analysis",
+            "thorough investigation",
+            "deep dive",
+            "academic",
+            "scholarly",
+            "literature review",
+            "systematic review",
+            "meta-analysis",
+            "citations",
+            "references",
+            "bibliography",
+            "peer-reviewed",
+            "journal",
+            "publication"
+        ]
+        
+        # Convert input to lowercase for case-insensitive matching
+        lower_input = user_input.lower()
+        
+        # Check for research indicators that suggest deep research
+        for indicator in research_indicators:
+            if indicator in lower_input:
+                print(f"Enabling research mode due to indicator: {indicator}")
+                return True
+                
+        return False
+        
+    def process_user_input(self, user_input):
+        """Process user input and generate a response."""
+        if not user_input:
+            return
+            
+        # Add user message to chat history
+        st.session_state.chat_history.append({"role": "user", "content": user_input})
+        
+        # Check if this is a research command
+        if user_input.startswith("/research"):
+            # Extract the research query
+            query = user_input[9:].strip()
+            if query:
+                if self.on_research_request:
+                    response = self.on_research_request(query)
+                else:
+                    response = "Research command handler not configured."
+            else:
+                response = "Please provide a research query after /research"
+                
+        else:
+            # Get current document content to provide context to the LLM
+            current_document = self._get_current_document()
+            
+            # Check if the user is asking to summarize or use previous content
+            summarize_indicators = [
+                "summarize", "summary", "generate a summary", "create a summary", 
+                "put this in", "add this to", "update the document", "update document",
+                "add to document", "add to the document", "put in document", "put in the document",
+                "create document", "create a document", "make a document", "make document",
+                "edit document", "edit the document", "write document", "write a document",
+                "generate document", "generate a document"
+            ]
+            is_summarize_request = any(indicator in user_input.lower() for indicator in summarize_indicators)
+            
+            # If this is a summarize request and we have previous messages
+            if is_summarize_request and len(st.session_state.chat_history) >= 2:
+                # Get the last assistant message
+                last_assistant_message = None
+                for msg in reversed(st.session_state.chat_history):
+                    if msg["role"] == "assistant":
+                        last_assistant_message = msg["content"]
+                        break
+                
+                if last_assistant_message:
+                    # Create a special system message for summarization
+                    system_message = f"""
+                    The user wants you to summarize or add the content from your previous response to the document.
+                    
+                    Here is your previous response that should be summarized or added to the document:
+                    ```
+                    {last_assistant_message}
+                    ```
+                    
+                    Current document content:
+                    ```
+                    {current_document}
+                    ```
+                    
+                    IMPORTANT: You MUST respond with "I'll update the document with:" followed by a well-formatted version
+                    of the content that should be added to the document. Focus ONLY on the factual content from
+                    your previous response, not on system instructions or capabilities.
+                    
+                    For example, if your previous response contained news headlines, create a well-formatted summary
+                    of those headlines. Do NOT include any meta-commentary about your capabilities or functions.
+                    
+                    The document should be in Markdown format with appropriate headings, bullet points, etc.
+                    """
+                    
+                    # Generate response with the special system message
+                    with st.spinner("Thinking..."):
+                        response = self.llm_manager.generate_response(
+                            prompt=user_input,
+                            system_prompt=system_message,
+                            research_mode=False
+                        )
+                else:
+                    # Add regular document context as a system message
+                    self.llm_manager.add_message("system", f"""
+                    Current document content:
+                    ```
+                    {current_document}
+                    ```
+                    
+                    You have two main responsibilities:
+                    
+                    1. Help with document editing when the user asks about creating, editing, or modifying the document.
+                       When doing this, respond with "I'll update the document with:" followed by the content.
+                    
+                    2. Answer general questions and provide information using your functions:
+                       - For general information or current events, use the search_with_perplexity function
+                       - For in-depth research questions, use the research_with_perplexity function
+                    
+                    If the user is asking about news, current events, or information that requires up-to-date knowledge,
+                    ALWAYS use one of your search functions rather than responding from your training data.
+                    """)
+                    
+                    # Check if we should use research mode
+                    research_mode = self._should_use_research_mode(user_input)
+                    
+                    # Generate response with the LLM
+                    with st.spinner("Thinking..."):
+                        response = self.llm_manager.generate_response(
+                            prompt=user_input, 
+                            research_mode=research_mode
+                        )
+            else:
+                # Add regular document context as a system message
+                self.llm_manager.add_message("system", f"""
+                Current document content:
+                ```
+                {current_document}
+                ```
+                
+                You have two main responsibilities:
+                
+                1. Help with document editing when the user asks about creating, editing, or modifying the document.
+                   When doing this, respond with "I'll update the document with:" followed by the content.
+                
+                2. Answer general questions and provide information using your functions:
+                   - For general information or current events, use the search_with_perplexity function
+                   - For in-depth research questions, use the research_with_perplexity function
+                
+                If the user is asking about news, current events, or information that requires up-to-date knowledge,
+                ALWAYS use one of your search functions rather than responding from your training data.
+                """)
+                
+                # Check if we should use research mode
+                research_mode = self._should_use_research_mode(user_input)
+                
+                # Generate response with the LLM
+                with st.spinner("Thinking..."):
+                    response = self.llm_manager.generate_response(
+                        prompt=user_input, 
+                        research_mode=research_mode
+                    )
+            
+            # Check if we should play the response as audio
+            if "audio_enabled" in st.session_state and st.session_state.audio_enabled:
+                try:
+                    with st.spinner("Generating audio..."):
+                        audio_file = self.audio_processor.text_to_speech(response)
+                        if audio_file:
+                            st.audio(audio_file)
+                except Exception as e:
+                    st.error(f"Error generating audio: {e}")
+        
+        # Add assistant message to chat history
+        st.session_state.chat_history.append({"role": "assistant", "content": response})
+        
+        st.rerun() 

@@ -6,7 +6,8 @@ It handles chat completions, prompt formatting, and context management to enable
 intelligent conversations in the Travin Canvas application.
 
 Key features:
-- OpenAI API integration for chat completions
+- OpenAI API integration for chat completions with function calling
+- Perplexity AI integration for research and information gathering
 - Conversation history management
 - Specialized prompt templates for document operations
 - Document summarization and enhancement capabilities
@@ -16,27 +17,76 @@ Dependencies:
 - openai: For API access to OpenAI models
 - httpx: For custom HTTP client configuration
 - dotenv: For environment variable management
+- tools.perplexity: For Perplexity AI integration
 """
 
 import os
+import json
 import httpx
+from typing import Optional, List, Dict, Any
 from openai import OpenAI
 from dotenv import load_dotenv
+from tools.perplexity import PerplexityTool
 
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI client
-api_key = os.getenv("OPENAI_API_KEY")
-if not api_key:
+# Initialize OpenAI configuration
+openai_api_key = os.getenv("OPENAI_API_KEY")
+openai_model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")  # Default to gpt-3.5-turbo if not specified
+if not openai_api_key:
     raise ValueError("OPENAI_API_KEY environment variable is not set")
+
+# Initialize Perplexity configuration
+perplexity_api_key = os.getenv("PERPLEXITY_API_KEY")
+perplexity_model = os.getenv("PERPLEXITY_MODEL", "sonar-reasoning")  # Default to sonar-reasoning if not specified
+perplexity_research_model = os.getenv("PERPLEXITY_RESEARCH_MODEL", "sonar-deep-research")  # Default to sonar-deep-research if not specified
+if not perplexity_api_key:
+    print("Warning: PERPLEXITY_API_KEY environment variable is not set")
 
 # Create a custom httpx client without proxies
 http_client = httpx.Client()
 
 # Initialize OpenAI client with the custom httpx client
 # This avoids the 'proxies' parameter issue in the newer OpenAI SDK
-client = OpenAI(api_key=api_key, http_client=http_client)
+client = OpenAI(api_key=openai_api_key, http_client=http_client)
+
+# Define function schemas for OpenAI function calling
+PERPLEXITY_SEARCH_FUNCTION = {
+    "type": "function",
+    "function": {
+        "name": "search_with_perplexity",
+        "description": "Search the internet for current information, news, events, or facts using Perplexity AI. Use this for any questions about current events, news, or information that might be outdated in your training data.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The search query to find information about"
+                }
+            },
+            "required": ["query"]
+        }
+    }
+}
+
+PERPLEXITY_RESEARCH_FUNCTION = {
+    "type": "function",
+    "function": {
+        "name": "research_with_perplexity",
+        "description": "Perform deep research on a topic using Perplexity AI's specialized research model. Use this for comprehensive analysis, detailed explanations, or when citations are needed.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "The research query to investigate in depth"
+                }
+            },
+            "required": ["query"]
+        }
+    }
+}
 
 class LLMManager:
     """
@@ -46,22 +96,31 @@ class LLMManager:
     handling all aspects of the interaction including:
     - Conversation history management
     - Message formatting and prompt engineering
-    - API calls with error handling
+    - API calls with error handling and function calling
     - Response processing and parsing
+    - Research and information gathering via Perplexity AI
     
     It supports both general chat completions and specialized document
     operations like summarization, enhancement, and editing.
     """
     
-    def __init__(self, model="o3-mini"):
+    def __init__(self, model: Optional[str] = None):
         """
         Initialize the LLM manager with the specified model.
         
         Args:
-            model (str): The LLM model to use
+            model (str, optional): The LLM model to use. If not provided, uses OPENAI_MODEL from env
         """
-        self.model = model
+        self.model = model or openai_model
         self.conversation_history = []
+        self.perplexity = None
+        if perplexity_api_key:
+            self.perplexity = PerplexityTool(
+                api_key=perplexity_api_key,
+                default_model=perplexity_model
+            )
+            # Store the research model name for later use
+            self.perplexity_research_model = perplexity_research_model
         
     def add_message(self, role, content):
         """
@@ -86,13 +145,79 @@ class LLMManager:
         """Clear the conversation history."""
         self.conversation_history = []
         
-    def generate_response(self, prompt=None, system_prompt=None):
+    def search_with_perplexity(self, query: str) -> Optional[str]:
+        """
+        Search for information using Perplexity AI's standard model.
+        
+        Args:
+            query (str): The search query
+            
+        Returns:
+            Optional[str]: The search results with citations, or None if unavailable
+        """
+        if not self.perplexity:
+            print("Warning: Perplexity AI not available - PERPLEXITY_API_KEY not set")
+            return None
+            
+        try:
+            return self.perplexity.ask_question(query, model=self.perplexity.default_model)
+        except Exception as e:
+            print(f"Error searching with Perplexity: {e}")
+            return None
+            
+    def research_with_perplexity(self, query: str) -> Optional[str]:
+        """
+        Perform deep research using Perplexity AI's research model.
+        
+        Args:
+            query (str): The research query to investigate in depth
+            
+        Returns:
+            Optional[str]: The research results with citations, or None if unavailable
+        """
+        if not self.perplexity:
+            print("Warning: Perplexity AI not available - PERPLEXITY_API_KEY not set")
+            return None
+            
+        try:
+            return self.perplexity.ask_question(query, model=self.perplexity_research_model)
+        except Exception as e:
+            print(f"Error researching with Perplexity: {e}")
+            return None
+    
+    def research_topic(self, query: str) -> Optional[str]:
+        """
+        Research a topic using Perplexity AI.
+        
+        This method uses Perplexity AI to gather detailed information and citations
+        about a specific topic or question. It's particularly useful when the LLM
+        needs additional context or up-to-date information.
+        
+        Args:
+            query (str): The research query or topic to investigate
+            
+        Returns:
+            Optional[str]: The research results with citations, or None if unavailable
+        """
+        if not self.perplexity:
+            print("Warning: Perplexity AI not available - PERPLEXITY_API_KEY not set")
+            return None
+            
+        try:
+            # Use the deep research model for comprehensive results
+            return self.perplexity.ask_question(query, model=self.perplexity_research_model)
+        except Exception as e:
+            print(f"Error researching topic: {e}")
+            return None
+            
+    def generate_response(self, prompt=None, system_prompt=None, research_mode=False):
         """
         Generate a response from the LLM based on the conversation history.
         
         Args:
             prompt (str, optional): A new user prompt to add to the conversation
             system_prompt (str, optional): A system prompt to add to the conversation
+            research_mode (bool, optional): Whether to use Perplexity AI for research
             
         Returns:
             str: The generated response
@@ -111,12 +236,111 @@ class LLMManager:
             messages.append({"role": "user", "content": prompt})
             
         try:
+            # Check if this is a document editing request
+            is_document_request = False
+            if system_prompt and any(phrase in system_prompt for phrase in [
+                "summarize or add the content", 
+                "add to the document", 
+                "update the document"
+            ]):
+                is_document_request = True
+                print("Detected document editing request")
+            
+            # Define available tools based on Perplexity availability
+            tools = []
+            if self.perplexity and not is_document_request:
+                tools = [PERPLEXITY_SEARCH_FUNCTION, PERPLEXITY_RESEARCH_FUNCTION]
+            
+            # Default to auto tool choice
+            tool_choice = "auto"
+            
+            # Check if the prompt contains keywords that suggest using search
+            if prompt and self.perplexity and tools and not is_document_request:
+                search_keywords = ["news", "latest", "current", "recent", "today", "headlines", "what is", "who is", "where is", "when did", "how to", "tell me about"]
+                lower_prompt = prompt.lower()
+                
+                for keyword in search_keywords:
+                    if keyword in lower_prompt:
+                        # Force the model to use the search function
+                        tool_choice = {
+                            "type": "function",
+                            "function": {"name": "search_with_perplexity"}
+                        }
+                        print(f"Forcing search function for keyword: {keyword}")
+                        break
+            
+            # If research mode is enabled, override and force research function
+            if research_mode and self.perplexity and not is_document_request:
+                tool_choice = {
+                    "type": "function",
+                    "function": {"name": "research_with_perplexity"}
+                }
+                print("Forcing research function due to research_mode=True")
+            
+            print(f"Using tool_choice: {tool_choice}")
+            
+            # Make the initial API call with function calling enabled
             response = client.chat.completions.create(
                 model=self.model,
-                messages=messages
+                messages=messages,
+                tools=tools if tools else None,
+                tool_choice=tool_choice if tools else None
             )
             
-            response_text = response.choices[0].message.content
+            response_message = response.choices[0].message
+            
+            # Check if the model wants to call a function
+            if response_message.tool_calls:
+                print(f"Model decided to use function: {response_message.tool_calls[0].function.name}")
+                
+                # Process each tool call
+                for tool_call in response_message.tool_calls:
+                    function_name = tool_call.function.name
+                    function_args = json.loads(tool_call.function.arguments)
+                    
+                    print(f"Executing {function_name} with query: {function_args.get('query')}")
+                    
+                    # Execute the appropriate function
+                    function_response = None
+                    if function_name == "search_with_perplexity":
+                        function_response = self.search_with_perplexity(function_args.get("query"))
+                    elif function_name == "research_with_perplexity":
+                        function_response = self.research_with_perplexity(function_args.get("query"))
+                    
+                    # Add the function response to messages
+                    if function_response:
+                        messages.append({
+                            "role": "assistant",
+                            "content": None,
+                            "tool_calls": [
+                                {
+                                    "id": tool_call.id,
+                                    "type": "function",
+                                    "function": {
+                                        "name": function_name,
+                                        "arguments": tool_call.function.arguments
+                                    }
+                                }
+                            ]
+                        })
+                        
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": function_response
+                        })
+                
+                # Make a second API call to get the final response
+                second_response = client.chat.completions.create(
+                    model=self.model,
+                    messages=messages
+                )
+                
+                response_text = second_response.choices[0].message.content
+            else:
+                print("Model did not use any functions")
+                # If no function was called, use the original response
+                response_text = response_message.content
             
             # Add the new messages to the conversation history
             if prompt:
