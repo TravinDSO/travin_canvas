@@ -115,8 +115,6 @@ class ChatInterface:
     def render(self):
         """Render the chat interface in the Streamlit sidebar."""
         with st.sidebar:
-            st.title("Travin Canvas Chat")
-            
             # Display chat history
             st.write("### Chat History")
             chat_container = st.container(height=400)

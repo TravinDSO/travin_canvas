@@ -39,8 +39,15 @@ if not openai_api_key:
 
 # Initialize Perplexity configuration
 perplexity_api_key = os.getenv("PERPLEXITY_API_KEY")
-perplexity_model = os.getenv("PERPLEXITY_MODEL", "sonar-reasoning")  # Default to sonar-reasoning if not specified
-perplexity_research_model = os.getenv("PERPLEXITY_RESEARCH_MODEL", "sonar-deep-research")  # Default to sonar-deep-research if not specified
+# Strip any comments from the model names
+perplexity_model = os.getenv("PERPLEXITY_MODEL", "sonar-reasoning")
+if perplexity_model and "#" in perplexity_model:
+    perplexity_model = perplexity_model.split("#")[0].strip()
+    
+perplexity_research_model = os.getenv("PERPLEXITY_RESEARCH_MODEL", "sonar-deep-research")
+if perplexity_research_model and "#" in perplexity_research_model:
+    perplexity_research_model = perplexity_research_model.split("#")[0].strip()
+    
 if not perplexity_api_key:
     print("Warning: PERPLEXITY_API_KEY environment variable is not set")
 
