@@ -24,6 +24,9 @@ import json
 import streamlit as st
 from utils.markdown_utils import MarkdownProcessor
 from utils.llm_utils import LLMManager
+import docx
+from PyPDF2 import PdfReader
+import io
 
 class MarkdownCanvas:
     """
@@ -66,6 +69,13 @@ class MarkdownCanvas:
             
         if "max_history" not in st.session_state:
             st.session_state.max_history = 10
+            
+        # Add a flag to track file processing status
+        if "file_processed" not in st.session_state:
+            st.session_state.file_processed = False
+            
+        if "last_uploaded_file" not in st.session_state:
+            st.session_state.last_uploaded_file = None
     
     def render(self):
         """Render the markdown canvas."""
@@ -101,13 +111,51 @@ class MarkdownCanvas:
         
         # File uploader
         with col3:
-            uploaded_file = st.file_uploader("Upload Markdown", type=["md", "txt"], label_visibility="collapsed")
-            if uploaded_file:
-                # Save current state to history before loading new file
-                self._save_to_history()
-                st.session_state.markdown_content = uploaded_file.getvalue().decode("utf-8")
-                st.session_state.current_file = uploaded_file.name
-                st.rerun()
+            uploaded_file = st.file_uploader("Upload Document", type=["md", "txt", "docx", "pdf"], label_visibility="collapsed")
+            
+            # Process the file only if it's a new file or hasn't been processed yet
+            if uploaded_file and (uploaded_file != st.session_state.last_uploaded_file or not st.session_state.file_processed):
+                try:
+                    # Save current state to history before loading new file
+                    self._save_to_history()
+                    
+                    # Update the last uploaded file
+                    st.session_state.last_uploaded_file = uploaded_file
+                    st.session_state.file_processed = False
+                    
+                    # Process the file based on its type
+                    file_extension = uploaded_file.name.split('.')[-1].lower()
+                    
+                    # Add a status message
+                    with st.status(f"Processing {file_extension} file: {uploaded_file.name}...", expanded=True) as status:
+                        if file_extension in ['md', 'txt']:
+                            # Handle markdown and text files
+                            content = uploaded_file.getvalue().decode("utf-8")
+                            st.session_state.markdown_content = content
+                            status.update(label=f"Loaded text file: {len(content)} characters", state="complete")
+                        elif file_extension == 'docx':
+                            # Handle Word documents
+                            content = self._extract_text_from_docx(uploaded_file)
+                            st.session_state.markdown_content = content
+                            status.update(label=f"Converted Word document: {len(content)} characters", state="complete")
+                        elif file_extension == 'pdf':
+                            # Handle PDF files
+                            content = self._extract_text_from_pdf(uploaded_file)
+                            st.session_state.markdown_content = content
+                            status.update(label=f"Converted PDF file: {len(content)} characters", state="complete")
+                        
+                        st.session_state.current_file = uploaded_file.name
+                        
+                        # Notify about content change
+                        if self.on_content_change:
+                            self.on_content_change(st.session_state.markdown_content)
+                        
+                        # Mark as processed to avoid reprocessing
+                        st.session_state.file_processed = True
+                except Exception as e:
+                    st.error(f"Error processing file: {str(e)}")
+                    import traceback
+                    st.error(traceback.format_exc())
         
         # Toggle between editor and preview modes
         with col4:
@@ -127,6 +175,84 @@ class MarkdownCanvas:
             self._render_editor()
         else:
             self._render_preview()
+    
+    def _extract_text_from_docx(self, docx_file):
+        """
+        Extract text from a Word document.
+        
+        Args:
+            docx_file: The uploaded Word document
+            
+        Returns:
+            str: The extracted text content
+        """
+        try:
+            # Load the document
+            doc_bytes = docx_file.getvalue()
+            
+            doc = docx.Document(io.BytesIO(doc_bytes))
+            full_text = []
+            
+            # Extract text from paragraphs
+            paragraph_count = 0
+            for para in doc.paragraphs:
+                if para.text:
+                    full_text.append(para.text)
+                    paragraph_count += 1
+            
+            # Extract text from tables
+            table_count = 0
+            for table in doc.tables:
+                for row in table.rows:
+                    row_text = []
+                    for cell in row.cells:
+                        if cell.text:
+                            row_text.append(cell.text)
+                    if row_text:
+                        full_text.append(" | ".join(row_text))
+                        table_count += 1
+            
+            result = "\n\n".join(full_text)
+            return result
+        except Exception as e:
+            st.error(f"Error processing Word document: {str(e)}")
+            import traceback
+            st.error(traceback.format_exc())
+            return f"Error processing document: {str(e)}"
+    
+    def _extract_text_from_pdf(self, pdf_file):
+        """
+        Extract text from a PDF file.
+        
+        Args:
+            pdf_file: The uploaded PDF file
+            
+        Returns:
+            str: The extracted text content
+        """
+        try:
+            # Load the PDF
+            pdf_bytes = pdf_file.getvalue()
+            
+            pdf_reader = PdfReader(io.BytesIO(pdf_bytes))
+            full_text = []
+            
+            # Extract text from each page
+            page_count = len(pdf_reader.pages)
+            
+            for page_num in range(page_count):
+                page = pdf_reader.pages[page_num]
+                text = page.extract_text()
+                if text:
+                    full_text.append(text)
+            
+            result = "\n\n".join(full_text)
+            return result
+        except Exception as e:
+            st.error(f"Error processing PDF file: {str(e)}")
+            import traceback
+            st.error(traceback.format_exc())
+            return f"Error processing document: {str(e)}"
     
     def _render_editor(self):
         """

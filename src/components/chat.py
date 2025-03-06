@@ -122,7 +122,7 @@ class ChatInterface:
             chat_container = st.container(height=400)
             
             with chat_container:
-                for message in st.session_state.chat_history:
+                for i, message in enumerate(st.session_state.chat_history):
                     role = message["role"]
                     content = message["content"]
                     
@@ -141,7 +141,8 @@ class ChatInterface:
                                 if marker_index != -1:
                                     edit_content = content[marker_index + len(marker):].strip()
                                     st.session_state.pending_edit = edit_content
-                                    self._render_edit_confirmation_buttons()
+                                    # Pass the message index to create unique keys
+                                    self._render_edit_confirmation_buttons(message_index=i)
             
             # User input area
             st.write("### Your Message")
@@ -198,14 +199,19 @@ class ChatInterface:
                     st.session_state.user_input = ""
                     st.rerun()
     
-    def _render_edit_confirmation_buttons(self):
-        """Render confirmation buttons for document edits."""
+    def _render_edit_confirmation_buttons(self, message_index=0):
+        """
+        Render confirmation buttons for document edits.
+        
+        Args:
+            message_index (int): Index of the message to create unique keys
+        """
         st.markdown("**Document update ready to apply:**")
         
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("✅ Apply Changes", key="apply_changes_inline"):
+            if st.button("✅ Apply Changes", key=f"apply_changes_inline_{message_index}"):
                 # Apply the changes to the document
                 if "markdown_canvas" in st.session_state:
                     st.session_state.markdown_content = st.session_state.pending_edit
@@ -221,7 +227,7 @@ class ChatInterface:
                     st.rerun()
         
         with col2:
-            if st.button("❌ Cancel", key="cancel_changes_inline"):
+            if st.button("❌ Cancel", key=f"cancel_changes_inline_{message_index}"):
                 # Add cancellation message to chat
                 st.session_state.chat_history.append({
                     "role": "system", 
