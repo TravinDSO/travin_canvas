@@ -23,6 +23,7 @@ Dependencies:
 import os
 import subprocess
 import sys
+import time
 
 def main():
     """
@@ -53,7 +54,11 @@ def main():
         print(f"Error running Streamlit: {e}")
         sys.exit(1)
     except KeyboardInterrupt:
-        print("\nTravin Canvas stopped.")
+        # Print consistent shutdown messages
+        print("\nStopping...")
+        # Brief pause to mimic the UI delay
+        time.sleep(1)
+        print("Travin Canvas stopped.")
     except Exception as e:
         print(f"Unexpected error: {e}")
         sys.exit(1)

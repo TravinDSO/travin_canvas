@@ -38,6 +38,9 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Global flag to track if shutdown is in progress
+shutdown_in_progress = False
+
 # Custom CSS
 st.markdown("""
 <style>
@@ -170,15 +173,22 @@ def graceful_shutdown():
     Perform a graceful shutdown of the application.
     
     This function handles proper cleanup and resource release before
-    terminating the Streamlit application. It aligns with the Ctrl-C
-    handling in run.py for consistency but uses os._exit for immediate
-    termination of all processes.
+    terminating the Streamlit application. It provides a consistent
+    shutdown experience when using the Exit button.
     
     The shutdown process:
     1. Displays a shutdown message on the webpage
-    2. Prints terminal messages similar to Ctrl-C handling
+    2. Prints terminal messages about the shutdown
     3. Terminates the application using os._exit(0)
     """
+    global shutdown_in_progress
+    
+    # Prevent multiple shutdown attempts
+    if shutdown_in_progress:
+        return
+    
+    shutdown_in_progress = True
+    
     # Display a message to the user about the shutdown
     st.toast("Shutting down Travin Canvas...", icon="🛑")
     
@@ -207,12 +217,15 @@ def graceful_shutdown():
         unsafe_allow_html=True
     )
     
-    # Print shutdown messages to terminal, similar to Ctrl-C handling
+    # Print shutdown messages to terminal
     print("\nStopping...")
+    
+    # Give the UI a moment to update before exiting
+    time.sleep(1)
+    
     print("Travin Canvas stopped.")
     
     # Force immediate termination of all processes
-    # This is more abrupt than sys.exit() but ensures everything stops
     os._exit(0)
 
 def main():
