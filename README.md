@@ -2,6 +2,8 @@
 
 A web application that combines an LLM-powered chat interface with a collaborative markdown editor and integration with n8n webhooks and Perplexity AI.
 
+![Screenshot of Travin Canvas](./images/gui.png?raw=true)
+
 ## Features
 
 ### Chat Interface (Left Panel)
