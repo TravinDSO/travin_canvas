@@ -1,13 +1,11 @@
 # Travin Canvas
 
-A web application that combines an LLM-powered chat interface with a collaborative markdown editor, supporting real-time speech-to-text input, text-to-speech responses, and integration with n8n webhooks and Perplexity AI.
+A web application that combines an LLM-powered chat interface with a collaborative markdown editor and integration with n8n webhooks and Perplexity AI.
 
 ## Features
 
 ### Chat Interface (Left Panel)
 - **AI-Powered Conversations**: Interact with OpenAI's GPT models for intelligent assistance
-- **Speech Input**: Real-time speech-to-text input using OpenAI's Whisper API
-- **Voice Responses**: Text-to-speech responses using OpenAI's TTS API
 - **Research Commands**: Trigger external n8n workflows with the `/research` command
 - **Document Awareness**: The AI assistant maintains awareness of your document content
 - **Perplexity AI Integration**: Access to Perplexity AI's research capabilities through OpenAI function calls
@@ -59,7 +57,6 @@ travin_canvas/
 
 ### Prerequisites
 - Python 3.8 or higher
-- FFmpeg installed on your system (for audio processing)
 - OpenAI API key
 - Perplexity AI API key (for research capabilities)
 - n8n instance with configured webhooks (optional, for `/research` command)
@@ -114,11 +111,9 @@ streamlit run src/main.py
 The chat interface is located in the left sidebar:
 
 1. **Text Input**: Type your message in the chat input field and press Enter
-2. **Voice Input**: Click the microphone button to record speech input
-3. **Text-to-Speech**: Toggle the speaker button to hear responses
-4. **Research Command**: Type `/research` followed by a query to send to your configured n8n webhook
-5. **Clear Chat**: Use the "Clear Chat" button to start a new conversation
-6. **Perplexity Research**: Ask research questions directly in chat - the AI will automatically use Perplexity when needed through function calling
+2. **Research Command**: Type `/research` followed by a query to send to your configured n8n webhook
+3. **Clear Chat**: Use the "Clear Chat" button to start a new conversation
+4. **Perplexity Research**: Ask research questions directly in chat - the AI will automatically use Perplexity when needed through function calling
 
 ### Using the Markdown Canvas
 
