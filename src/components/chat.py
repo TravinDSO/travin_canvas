@@ -2,22 +2,18 @@
 Chat Interface Component for Travin Canvas
 
 This module provides the chat interface component for the Travin Canvas application.
-It handles all user interactions with the LLM, including text input, speech-to-text,
-text-to-speech capabilities, and research commands. The component creates a
-conversational experience that integrates with the markdown canvas.
+It handles all user interactions with the LLM, including text input and research commands.
+The component creates a conversational experience that integrates with the markdown canvas.
 
 Key features:
 - Text-based chat with OpenAI's GPT models using function calling
 - Integration with Perplexity AI for search and research capabilities
-- Speech-to-text input using OpenAI's Whisper API
-- Text-to-speech responses using OpenAI's TTS API
 - Support for research commands via n8n webhooks
 - Document-aware conversations with context management
 
 Dependencies:
 - streamlit: For UI components
 - utils.llm_utils: For LLM interactions
-- utils.audio_utils: For speech processing
 - utils.webhook_utils: For external integrations
 """
 
@@ -25,7 +21,6 @@ import os
 import time
 import streamlit as st
 from utils.llm_utils import LLMManager
-from utils.audio_utils import AudioProcessor
 from utils.webhook_utils import WebhookManager
 
 class ChatInterface:
@@ -34,8 +29,8 @@ class ChatInterface:
     
     This class manages the entire chat experience, including:
     - Conversation history storage and rendering
-    - User input handling (text and speech)
-    - LLM response generation and playback
+    - User input handling
+    - LLM response generation
     - Research command processing
     - Document edit suggestions and confirmations
     
@@ -51,19 +46,12 @@ class ChatInterface:
             on_research_request (callable, optional): Callback for research requests
         """
         self.llm_manager = LLMManager()
-        self.audio_processor = AudioProcessor()
         self.webhook_manager = WebhookManager(verify_ssl=False)  # Disable SSL verification
         self.on_research_request = on_research_request
         
         # Initialize session state for chat history if not exists
         if "chat_history" not in st.session_state:
             st.session_state.chat_history = []
-            
-        if "recording" not in st.session_state:
-            st.session_state.recording = False
-            
-        if "audio_file" not in st.session_state:
-            st.session_state.audio_file = None
             
         if "pending_edit" not in st.session_state:
             st.session_state.pending_edit = None
@@ -148,44 +136,13 @@ class ChatInterface:
             # Text input
             user_input = st.text_area("Type your message", key="user_input", height=100)
             
-            # Speech input
+            # Button row
             col1, col2 = st.columns(2)
-            with col1:
-                if st.button("🎤 Record", use_container_width=True):
-                    st.session_state.recording = True
-                    st.rerun()
             
             with col2:
                 if st.button("🧹 Clear Chat", use_container_width=True):
                     self.clear_chat_history()
                     st.rerun()
-            
-            # Handle recording state
-            if st.session_state.recording:
-                with st.spinner("Recording... (Click Stop when finished)"):
-                    if st.button("⏹️ Stop Recording", use_container_width=True):
-                        st.session_state.recording = False
-                        
-                        # Process the audio
-                        try:
-                            audio_file = self.audio_processor.stop_recording()
-                            if audio_file:
-                                st.session_state.audio_file = audio_file
-                                
-                                # Transcribe the audio
-                                with st.spinner("Transcribing..."):
-                                    transcription = self.audio_processor.transcribe_audio(audio_file)
-                                    if transcription:
-                                        # Set the transcription as user input
-                                        st.session_state.user_input = transcription
-                                        st.rerun()
-                        except Exception as e:
-                            st.error(f"Error processing audio: {e}")
-                            st.session_state.recording = False
-                    
-                    # Start recording if not already started
-                    if not self.audio_processor.is_recording():
-                        self.audio_processor.start_recording()
             
             # Send button
             if st.button("Send", use_container_width=True, type="primary"):
@@ -446,16 +403,6 @@ class ChatInterface:
                         research_mode=research_mode
                     )
             
-            # Check if we should play the response as audio
-            if "audio_enabled" in st.session_state and st.session_state.audio_enabled:
-                try:
-                    with st.spinner("Generating audio..."):
-                        audio_file = self.audio_processor.text_to_speech(response)
-                        if audio_file:
-                            st.audio(audio_file)
-                except Exception as e:
-                    st.error(f"Error generating audio: {e}")
-        
         # Add assistant message to chat history
         st.session_state.chat_history.append({"role": "assistant", "content": response})
         

@@ -3,17 +3,16 @@ Travin Canvas - A web application for conversational document creation and editi
 
 This is the main entry point for the Travin Canvas application, which integrates
 a chat interface powered by an LLM with a collaborative markdown editor.
-The application supports real-time speech-to-text input, text-to-speech responses,
-and integration with n8n webhooks for research and dynamic LLM prompting.
+The application supports integration with n8n webhooks for research and dynamic LLM prompting.
 
 Key components:
-- Chat Interface: Manages conversations with the LLM, speech-to-text, and TTS
+- Chat Interface: Manages conversations with the LLM
 - Markdown Canvas: Provides document editing, preview, and enhancement tools
 - Webhook Integration: Connects to n8n for external research capabilities
 
 The application is built using Streamlit for the front-end interface,
 LangChain for managing LLM interactions and markdown processing,
-and OpenAI APIs for LLM, speech-to-text, and text-to-speech functionalities.
+and OpenAI APIs for LLM functionalities.
 
 Author: Travin AI
 License: MIT
