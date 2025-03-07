@@ -19,6 +19,8 @@ License: MIT
 """
 
 import os
+import sys
+import time
 import streamlit as st
 from dotenv import load_dotenv
 from components.chat import ChatInterface
@@ -62,6 +64,16 @@ st.markdown("""
         border-radius: 5px;
         padding: 20px !important;
         background-color: white;
+    }
+    
+    /* Shutdown button styles */
+    .shutdown-btn {
+        font-size: 0.8em;
+        opacity: 0.7;
+        height: 1.5rem;
+    }
+    .shutdown-btn:hover {
+        opacity: 1;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -153,6 +165,56 @@ def handle_content_change(content):
             The document has been updated. You can access the current content when needed.
             """)
 
+def graceful_shutdown():
+    """
+    Perform a graceful shutdown of the application.
+    
+    This function handles proper cleanup and resource release before
+    terminating the Streamlit application. It aligns with the Ctrl-C
+    handling in run.py for consistency but uses os._exit for immediate
+    termination of all processes.
+    
+    The shutdown process:
+    1. Displays a shutdown message on the webpage
+    2. Prints terminal messages similar to Ctrl-C handling
+    3. Terminates the application using os._exit(0)
+    """
+    # Display a message to the user about the shutdown
+    st.toast("Shutting down Travin Canvas...", icon="🛑")
+    
+    # Create a full-page shutdown message
+    st.markdown(
+        """
+        <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; height: 80vh; text-align: center;">
+            <h1 style="color: #FF5555;">Application Shutdown</h1>
+            <p style="font-size: 1.2rem; margin-top: 20px;">Travin Canvas has been terminated.</p>
+            <p style="margin-top: 10px;">You can close this browser tab.</p>
+        </div>
+        <style>
+            /* Hide all other elements */
+            header, .stSidebar, .stButton, footer {
+                display: none !important;
+            }
+            .main .block-container {
+                max-width: 100% !important;
+                padding-top: 0 !important;
+                padding-right: 0 !important;
+                padding-left: 0 !important;
+                padding-bottom: 0 !important;
+            }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    # Print shutdown messages to terminal, similar to Ctrl-C handling
+    print("\nStopping...")
+    print("Travin Canvas stopped.")
+    
+    # Force immediate termination of all processes
+    # This is more abrupt than sys.exit() but ensures everything stops
+    os._exit(0)
+
 def main():
     """
     Main application entry point.
@@ -181,7 +243,41 @@ def main():
     
     # Footer
     st.divider()
-    st.caption("Travin Canvas - Powered by Streamlit, LangChain, and OpenAI")
+    
+    # Footer content with shutdown button in a small container
+    footer_cols = st.columns([0.92, 0.08])
+    with footer_cols[0]:
+        st.caption("Travin Canvas - Powered by Streamlit, LangChain, and OpenAI")
+    
+    with footer_cols[1]:
+        # Apply custom class to the container div
+        st.markdown(
+            """
+            <style>
+            div[data-testid="column"]:nth-of-type(2) .stButton {
+                text-align: right;
+                height: 1.5rem;
+            }
+            div[data-testid="column"]:nth-of-type(2) .stButton button {
+                font-size: 0.7rem;
+                padding: 0px 0.5rem;
+                line-height: 1.2;
+                min-height: 0px;
+                height: 1.5rem;
+                border-radius: 4px;
+                opacity: 0.6;
+            }
+            div[data-testid="column"]:nth-of-type(2) .stButton button:hover {
+                opacity: 1;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True
+        )
+        if st.button("⏹️ Exit", key="shutdown_btn", help="Safely shutdown the application", 
+                     use_container_width=False, type="secondary", 
+                     on_click=graceful_shutdown):
+            pass
 
 if __name__ == "__main__":
     main()
