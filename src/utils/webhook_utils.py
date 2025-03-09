@@ -26,6 +26,9 @@ from dotenv import load_dotenv
 # Load environment variables
 load_dotenv()
 
+# Check if n8n integration is enabled
+use_n8n = os.getenv("USE_N8N", "false").lower() == "true"
+
 class WebhookManager:
     """
     Manages interactions with n8n webhooks for research and dynamic LLM prompting.
@@ -49,6 +52,9 @@ class WebhookManager:
         Args:
             verify_ssl (bool): Whether to verify SSL certificates. Set to False to bypass SSL verification.
         """
+        # First check if n8n integration is enabled
+        self.is_enabled = use_n8n
+        
         webhook_url = os.getenv("N8N_WEBHOOK_URL")
         
         # Remove quotes if present
@@ -58,8 +64,11 @@ class WebhookManager:
         self.webhook_url = webhook_url
         self.verify_ssl = verify_ssl
         
-        if not self.webhook_url:
-            print("Warning: N8N_WEBHOOK_URL not set in environment variables")
+        if not self.webhook_url and self.is_enabled:
+            print("Warning: N8N_WEBHOOK_URL not set in environment variables but USE_N8N is true")
+        
+        if not self.is_enabled:
+            print("Note: n8n webhook integration is disabled (USE_N8N is false)")
     
     def send_research_request(self, query, additional_context=None):
         """
@@ -72,6 +81,9 @@ class WebhookManager:
         Returns:
             dict: The processed research data from n8n
         """
+        if not self.is_enabled:
+            return {"error": "n8n webhook integration is disabled (USE_N8N is false)"}
+            
         if not self.webhook_url:
             return {"error": "N8N_WEBHOOK_URL not configured"}
         
@@ -125,29 +137,30 @@ class WebhookManager:
     
     def send_prompt_enhancement_request(self, prompt, document_context=None):
         """
-        Send a request to enhance an LLM prompt based on document context.
+        Send a prompt enhancement request to n8n.
         
         Args:
-            prompt (str): The original prompt to enhance
-            document_context (str, optional): The document context to consider
+            prompt (str): The prompt to enhance
+            document_context (str, optional): The document context for the enhancement
             
         Returns:
             dict: The enhanced prompt data from n8n
         """
+        if not self.is_enabled:
+            return {"error": "n8n webhook integration is disabled (USE_N8N is false)"}
+            
         if not self.webhook_url:
             return {"error": "N8N_WEBHOOK_URL not configured"}
         
         payload = {
             "prompt": prompt,
-            "type": "prompt_enhancement",
+            "type": "enhance_prompt",
         }
         
         if document_context:
-            payload["document_context"] = document_context
+            payload["context"] = document_context
             
         print(f"Sending prompt enhancement request to: {self.webhook_url}")
-        print(f"Payload type: {type(payload)}")
-        print(f"SSL Verification: {'Enabled' if self.verify_ssl else 'Disabled'}")
             
         try:
             # Add timeout to prevent hanging if the webhook is unreachable
@@ -157,7 +170,7 @@ class WebhookManager:
                 json=payload, 
                 timeout=30,
                 headers=headers,
-                verify=self.verify_ssl  # Skip SSL verification if needed
+                verify=self.verify_ssl
             )
             response.raise_for_status()
             return response.json()

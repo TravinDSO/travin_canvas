@@ -22,6 +22,17 @@ import time
 import streamlit as st
 from utils.llm_utils import LLMManager
 from utils.webhook_utils import WebhookManager
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Access global configuration
+use_azure = os.getenv("USE_AZURE", "false").lower() == "true"
+use_n8n = os.getenv("USE_N8N", "false").lower() == "true"
+use_perplexity = os.getenv("USE_PERPLEXITY", "false").lower() == "true"
+azure_model = os.getenv("AZURE_MODEL", "")
+openai_model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")
 
 class ChatInterface:
     """
@@ -38,20 +49,25 @@ class ChatInterface:
     its state between application reruns using session state.
     """
     
-    def __init__(self, on_research_request=None):
+    def __init__(self, on_research_request=None, use_perplexity=False):
         """
         Initialize the chat interface.
         
         Args:
             on_research_request (callable, optional): Callback for research requests
+            use_perplexity (bool, optional): Whether Perplexity AI integration is enabled
         """
         self.llm_manager = LLMManager()
         self.webhook_manager = WebhookManager(verify_ssl=False)  # Disable SSL verification
         self.on_research_request = on_research_request
+        self.use_perplexity = use_perplexity
         
         # Initialize session state for chat history if not exists
         if "chat_history" not in st.session_state:
             st.session_state.chat_history = []
+            
+            # Add configuration information as the first message
+            self._add_config_info_message()
             
         if "pending_edit" not in st.session_state:
             st.session_state.pending_edit = None
@@ -60,46 +76,81 @@ class ChatInterface:
             st.session_state.edit_confirmed = False
             
         # Add system message to inform the LLM about its capabilities
-        self.add_system_message("""
-        You are an AI assistant with two main capabilities:
+        if self.use_perplexity:
+            self.add_system_message("""
+            You are an AI assistant with two main capabilities:
+            
+            1. Document Editing:
+               When the user asks you to create, format, edit, or modify their document:
+               - Understand what changes they want to make
+               - Generate the appropriate content or modifications
+               - Use the phrase "I'll update the document with:" followed by the content
+            
+            2. Information Retrieval:
+               You have access to two special functions for retrieving information:
+               - search_with_perplexity: Use this to search the internet for general information and current events
+               - research_with_perplexity: Use this for in-depth research with comprehensive citations
+            
+            EXTREMELY IMPORTANT INSTRUCTIONS:
+            
+            When the user asks ANY question about:
+            - News or current events
+            - Recent developments or updates
+            - Facts that might have changed since your training
+            - "What is X" or "Tell me about X" questions
+            - Any topic where up-to-date information would be valuable
+            
+            You MUST use one of your search functions rather than responding from your training data.
+            DO NOT try to answer these questions directly - ALWAYS use the appropriate function.
+            
+            Examples of when to use search_with_perplexity:
+            - "What are today's top headlines?"
+            - "Tell me about recent developments in AI"
+            - "What is the current situation in Ukraine?"
+            - "Who is the current CEO of Apple?"
+            - "What's the weather like in New York today?"
+            
+            Examples of when to use research_with_perplexity:
+            - "I need detailed research on climate change impacts"
+            - "Provide a comprehensive analysis of quantum computing"
+            - "Give me an in-depth literature review on cancer treatments"
+            - "What are the scholarly perspectives on consciousness?"
+            """)
+        else:
+            self.add_system_message("""
+            You are an AI assistant focused on document editing.
+            
+            When the user asks you to create, format, edit, or modify their document:
+            - Understand what changes they want to make
+            - Generate the appropriate content or modifications
+            - Use the phrase "I'll update the document with:" followed by the content
+            """)
+    
+    def _add_config_info_message(self):
+        """Add a message with the current configuration information to the chat history."""
+        # Determine LLM provider and model
+        if use_azure:
+            llm_provider = "Azure OpenAI"
+            llm_model = azure_model
+        else:
+            llm_provider = "OpenAI"
+            llm_model = openai_model
+            
+        # Format the configuration information message
+        config_info = f"""
+        **System Configuration:**
+        - **LLM Provider:** {llm_provider}
+        - **Model:** {llm_model}
+        - **N8N Integration:** {'Enabled' if use_n8n else 'Disabled'}
+        - **Perplexity Integration:** {'Enabled' if use_perplexity else 'Disabled'}
+        """
         
-        1. Document Editing:
-           When the user asks you to create, format, edit, or modify their document:
-           - Understand what changes they want to make
-           - Generate the appropriate content or modifications
-           - Use the phrase "I'll update the document with:" followed by the content
-        
-        2. Information Retrieval:
-           You have access to two special functions for retrieving information:
-           - search_with_perplexity: Use this to search the internet for general information and current events
-           - research_with_perplexity: Use this for in-depth research with comprehensive citations
-        
-        EXTREMELY IMPORTANT INSTRUCTIONS:
-        
-        When the user asks ANY question about:
-        - News or current events
-        - Recent developments or updates
-        - Facts that might have changed since your training
-        - "What is X" or "Tell me about X" questions
-        - Any topic where up-to-date information would be valuable
-        
-        You MUST use one of your search functions rather than responding from your training data.
-        DO NOT try to answer these questions directly - ALWAYS use the appropriate function.
-        
-        Examples of when to use search_with_perplexity:
-        - "What are today's top headlines?"
-        - "Tell me about recent developments in AI"
-        - "What is the current situation in Ukraine?"
-        - "Who is the current CEO of Apple?"
-        - "What's the weather like in New York today?"
-        
-        Examples of when to use research_with_perplexity:
-        - "I need detailed research on climate change impacts"
-        - "Provide a comprehensive analysis of quantum computing"
-        - "Give me an in-depth literature review on cancer treatments"
-        - "What are the scholarly perspectives on consciousness?"
-        """)
-        
+        # Add the message to chat history
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": config_info
+        })
+    
     def render(self):
         """Render the chat interface in the Streamlit sidebar."""
         with st.sidebar:
@@ -133,8 +184,19 @@ class ChatInterface:
             # User input area
             st.write("### Your Message")
             
-            # Text input
-            user_input = st.text_area("Type your message", key="user_input", height=100)
+            # Initialize the widget key counter if it doesn't exist
+            if "widget_key_counter" not in st.session_state:
+                st.session_state.widget_key_counter = 0
+                
+            # Generate a key for the text area that changes when we want to clear it
+            textarea_key = f"user_input_{st.session_state.widget_key_counter}"
+            
+            # Text input widget with the dynamic key
+            user_input = st.text_area(
+                "Type your message", 
+                key=textarea_key,
+                height=100
+            )
             
             # Button row
             col1, col2 = st.columns(2)
@@ -142,16 +204,20 @@ class ChatInterface:
             with col2:
                 if st.button("🧹 Clear Chat", use_container_width=True):
                     self.clear_chat_history()
+                    # Re-add the configuration message after clearing
+                    self._add_config_info_message()
                     st.rerun()
             
             # Send button
             if st.button("Send", use_container_width=True, type="primary"):
-                if user_input:
+                if user_input and user_input.strip():
                     # Process the user input
                     self.process_user_input(user_input)
                     
-                    # Clear the input
-                    st.session_state.user_input = ""
+                    # Increment the counter to change the text area's key on next render
+                    st.session_state.widget_key_counter += 1
+                    
+                    # Force a rerun to update the UI with the new key
                     st.rerun()
     
     def _render_edit_confirmation_buttons(self, message_index=0):
@@ -205,8 +271,16 @@ class ChatInterface:
         return ""
     
     def clear_chat_history(self):
-        """Clear the chat history."""
+        """
+        Clear the chat history but keep system configuration information.
+        
+        This method resets the conversation history but preserves the
+        system configuration information message at the start of the chat.
+        """
+        # Clear the session state chat history
         st.session_state.chat_history = []
+        
+        # Clear the LLM manager conversation history
         self.llm_manager.clear_conversation_history()
     
     def add_system_message(self, content):
@@ -267,143 +341,166 @@ class ChatInterface:
         return False
         
     def process_user_input(self, user_input):
-        """Process user input and generate a response."""
-        if not user_input:
-            return
-            
-        # Add user message to chat history
-        st.session_state.chat_history.append({"role": "user", "content": user_input})
+        """
+        Process user input and generate a response.
         
+        This method handles all user input, including:
+        - Regular text-based questions and requests
+        - Research commands (prefixed with '/research')
+        - Document editing requests
+        
+        It updates the chat history with the user input and the generated response,
+        and handles any special actions needed based on the response content.
+        
+        Args:
+            user_input (str): The text input from the user
+        """
         # Check if this is a research command
-        if user_input.startswith("/research"):
-            # Extract the research query
-            query = user_input[9:].strip()
-            if query:
-                if self.on_research_request:
-                    response = self.on_research_request(query)
-                else:
-                    response = "Research command handler not configured."
-            else:
-                response = "Please provide a research query after /research"
+        if user_input.startswith("/research "):
+            research_query = user_input[len("/research "):].strip()
+            if self.on_research_request and research_query:
+                # Reset any pending edits
+                st.session_state.pending_edit = None
                 
-        else:
-            # Get current document content to provide context to the LLM
-            current_document = self._get_current_document()
-            
-            # Check if the user is asking to summarize or use previous content
-            summarize_indicators = [
-                "summarize", "summary", "generate a summary", "create a summary", 
-                "put this in", "add this to", "update the document", "update document",
-                "add to document", "add to the document", "put in document", "put in the document",
-                "create document", "create a document", "make a document", "make document",
-                "edit document", "edit the document", "write document", "write a document",
-                "generate document", "generate a document"
-            ]
-            is_summarize_request = any(indicator in user_input.lower() for indicator in summarize_indicators)
-            
-            # If this is a summarize request and we have previous messages
-            if is_summarize_request and len(st.session_state.chat_history) >= 2:
-                # Get the last assistant message
-                last_assistant_message = None
-                for msg in reversed(st.session_state.chat_history):
-                    if msg["role"] == "assistant":
-                        last_assistant_message = msg["content"]
-                        break
+                # Add user message to chat history
+                st.session_state.chat_history.append({
+                    "role": "user",
+                    "content": f"Research: {research_query}"
+                })
                 
-                if last_assistant_message:
-                    # Create a special system message for summarization
-                    system_message = f"""
-                    The user wants you to summarize or add the content from your previous response to the document.
-                    
-                    Here is your previous response that should be summarized or added to the document:
-                    ```
-                    {last_assistant_message}
-                    ```
-                    
-                    Current document content:
-                    ```
-                    {current_document}
-                    ```
-                    
-                    IMPORTANT: You MUST respond with "I'll update the document with:" followed by a well-formatted version
-                    of the content that should be added to the document. Focus ONLY on the factual content from
-                    your previous response, not on system instructions or capabilities.
-                    
-                    For example, if your previous response contained news headlines, create a well-formatted summary
-                    of those headlines. Do NOT include any meta-commentary about your capabilities or functions.
-                    
-                    The document should be in Markdown format with appropriate headings, bullet points, etc.
-                    """
-                    
-                    # Generate response with the special system message
-                    with st.spinner("Thinking..."):
-                        response = self.llm_manager.generate_response(
-                            prompt=user_input,
-                            system_prompt=system_message,
-                            research_mode=False
-                        )
-                else:
-                    # Add regular document context as a system message
-                    self.llm_manager.add_message("system", f"""
-                    Current document content:
-                    ```
-                    {current_document}
-                    ```
-                    
-                    You have two main responsibilities:
-                    
-                    1. Help with document editing when the user asks about creating, editing, or modifying the document.
-                       When doing this, respond with "I'll update the document with:" followed by the content.
-                    
-                    2. Answer general questions and provide information using your functions:
-                       - For general information or current events, use the search_with_perplexity function
-                       - For in-depth research questions, use the research_with_perplexity function
-                    
-                    If the user is asking about news, current events, or information that requires up-to-date knowledge,
-                    ALWAYS use one of your search functions rather than responding from your training data.
-                    """)
-                    
-                    # Check if we should use research mode
-                    research_mode = self._should_use_research_mode(user_input)
-                    
-                    # Generate response with the LLM
-                    with st.spinner("Thinking..."):
-                        response = self.llm_manager.generate_response(
-                            prompt=user_input, 
-                            research_mode=research_mode
-                        )
-            else:
-                # Add regular document context as a system message
-                self.llm_manager.add_message("system", f"""
-                Current document content:
-                ```
-                {current_document}
-                ```
+                # Add temporary assistant message
+                temp_idx = len(st.session_state.chat_history)
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": "Researching... please wait."
+                })
                 
-                You have two main responsibilities:
+                try:
+                    # Call the research handler with the query
+                    result = self.on_research_request(research_query)
+                    
+                    # Update the temporary message with the result
+                    st.session_state.chat_history[temp_idx]["content"] = result
+                except Exception as e:
+                    # Update temporary message with error
+                    st.session_state.chat_history[temp_idx]["content"] = f"Error during research: {str(e)}"
                 
-                1. Help with document editing when the user asks about creating, editing, or modifying the document.
-                   When doing this, respond with "I'll update the document with:" followed by the content.
-                
-                2. Answer general questions and provide information using your functions:
-                   - For general information or current events, use the search_with_perplexity function
-                   - For in-depth research questions, use the research_with_perplexity function
-                
-                If the user is asking about news, current events, or information that requires up-to-date knowledge,
-                ALWAYS use one of your search functions rather than responding from your training data.
-                """)
-                
-                # Check if we should use research mode
-                research_mode = self._should_use_research_mode(user_input)
-                
-                # Generate response with the LLM
-                with st.spinner("Thinking..."):
-                    response = self.llm_manager.generate_response(
-                        prompt=user_input, 
-                        research_mode=research_mode
-                    )
-            
-        # Add assistant message to chat history
-        st.session_state.chat_history.append({"role": "assistant", "content": response})
+                return
         
-        st.rerun() 
+        # Add user message to chat history
+        st.session_state.chat_history.append({
+            "role": "user",
+            "content": user_input
+        })
+        
+        # Determine if we should use research mode based on the query
+        research_mode = False
+        if self.use_perplexity:
+            research_mode = self._should_use_research_mode(user_input)
+            
+        # Get current document content to provide context to the LLM
+        current_document = self._get_current_document()
+        
+        # Set up system prompt with document context if available
+        if current_document:
+            system_prompt = f"""
+            You are a helpful AI assistant that helps the user work with documents.
+            
+            The current document content is:
+            ```
+            {current_document}
+            ```
+            
+            For document editing:
+            - When asked to edit, summarize or add to the document, provide the exact text to be added or modified
+            - Begin your response with "I'll update the document with:" followed by the content
+            - Use markdown formatting as appropriate
+            
+            For general questions:
+            - Answer clearly and concisely
+            - If relevant to the document, reference specific sections
+            - For information that might be outdated in your training data, use the available functions
+            
+            For current events or information retrieval:
+            - For general information or current events, use the search_with_perplexity function
+            - For in-depth research questions, use the research_with_perplexity function
+            """
+        else:
+            system_prompt = """
+            You are a helpful AI assistant. The user is working on a new document.
+            
+            When the user asks you to create or draft content:
+            - Generate appropriate markdown content based on their request
+            - Begin your response with "I'll update the document with:" followed by the content
+            - Use markdown formatting for headings, lists, emphasis, etc.
+            
+            For general questions:
+            - Answer clearly and concisely
+            - If asked about creating document structure, suggest markdown formats
+            - For information that might be outdated in your training data, use the available functions
+            
+            For current events or information retrieval:
+            - For general information or current events, use the search_with_perplexity function
+            - For in-depth research questions, use the research_with_perplexity function
+            """
+            
+        # Add temporary assistant message
+        temp_idx = len(st.session_state.chat_history)
+        st.session_state.chat_history.append({
+            "role": "assistant",
+            "content": "Thinking..."
+        })
+        
+        # Generate LLM response with the appropriate system prompt
+        try:
+            # Pass research_mode when Perplexity is enabled
+            if self.use_perplexity:
+                response = self.llm_manager.generate_response(
+                    prompt=user_input,
+                    system_prompt=system_prompt,
+                    research_mode=research_mode
+                )
+                # For compatibility with older code
+                if isinstance(response, dict):
+                    response_text = response.get("content", "")
+                else:
+                    response_text = response
+            else:
+                # Regular response without Perplexity
+                response = self.llm_manager.generate_response(
+                    prompt=user_input,
+                    system_prompt=system_prompt
+                )
+                # For compatibility with older code
+                if isinstance(response, dict):
+                    response_text = response.get("content", "")
+                else:
+                    response_text = response
+                
+            # Check if this is a document edit request
+            if response_text.startswith("I'll update the document with:"):
+                # Extract the content after the prefix
+                content_start = response_text.find("I'll update the document with:")
+                if content_start >= 0:
+                    content_start += len("I'll update the document with:")
+                    new_content = response_text[content_start:].strip()
+                    
+                    # Store the edit suggestion in session state
+                    st.session_state.pending_edit = new_content
+                    
+                    # Add the full response with our custom edit buttons
+                    st.session_state.chat_history[temp_idx]["content"] = response_text
+                    st.session_state.chat_history[temp_idx]["has_edit"] = True
+                    
+                    # The callback will handle the rerun
+                    return
+                    
+            # Update the temporary message with the final response
+            st.session_state.chat_history[temp_idx]["content"] = response_text
+            
+        except Exception as e:
+            # Update the temporary message with error information
+            st.session_state.chat_history[temp_idx]["content"] = f"Error generating response: {str(e)}"
+            print(f"Error in process_user_input: {e}")
+        
+        # We don't need to rerun here as the callback function will handle it 

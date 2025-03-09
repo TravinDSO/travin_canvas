@@ -30,6 +30,10 @@ from utils.webhook_utils import WebhookManager
 # Load environment variables
 load_dotenv()
 
+# Check if features are enabled
+use_n8n = os.getenv("USE_N8N", "false").lower() == "true"
+use_perplexity = os.getenv("USE_PERPLEXITY", "false").lower() == "true"
+
 # Set page configuration
 st.set_page_config(
     page_title="Travin Canvas",
@@ -96,6 +100,10 @@ def handle_research_request(query):
     Returns:
         str: A message indicating the result of the research operation
     """
+    # Check if n8n integration is enabled
+    if not use_n8n:
+        return "Research via n8n is currently disabled. Please enable it by setting USE_N8N=true in your .env file."
+    
     # Initialize WebhookManager with SSL verification disabled
     webhook_manager = WebhookManager(verify_ssl=False)
     
@@ -239,8 +247,11 @@ def main():
     Components are stored in session state to enable cross-component
     communication and maintain state between Streamlit reruns.
     """
-    # Initialize components
-    chat_interface = ChatInterface(on_research_request=handle_research_request)
+    # Initialize components with feature flags
+    chat_interface = ChatInterface(
+        on_research_request=handle_research_request,
+        use_perplexity=use_perplexity
+    )
     markdown_canvas = MarkdownCanvas(on_content_change=handle_content_change)
     
     # Store components in session state for access in callbacks

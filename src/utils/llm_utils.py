@@ -39,7 +39,6 @@ if use_azure:
     azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION") #"2024-12-01-preview"
     azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
     azure_model = os.getenv("AZURE_MODEL")
-    print(f"API Version from env: '{azure_api_version}'")
 else:
     # Initialize OpenAI configuration
     openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -47,7 +46,8 @@ else:
     if not openai_api_key:
         raise ValueError("OPENAI_API_KEY environment variable is not set")
 
-
+# Check if Perplexity integration is enabled
+use_perplexity = os.getenv("USE_PERPLEXITY", "false").lower() == "true"
 
 # Initialize Perplexity configuration
 perplexity_api_key = os.getenv("PERPLEXITY_API_KEY")
@@ -60,8 +60,11 @@ perplexity_research_model = os.getenv("PERPLEXITY_RESEARCH_MODEL", "sonar-deep-r
 if perplexity_research_model and "#" in perplexity_research_model:
     perplexity_research_model = perplexity_research_model.split("#")[0].strip()
     
-if not perplexity_api_key:
-    print("Warning: PERPLEXITY_API_KEY environment variable is not set")
+if not perplexity_api_key and use_perplexity:
+    print("Warning: PERPLEXITY_API_KEY environment variable is not set but USE_PERPLEXITY is true")
+
+if not use_perplexity:
+    print("Note: Perplexity AI integration is disabled (USE_PERPLEXITY is false)")
 
 # Create a custom httpx client without proxies
 http_client = httpx.Client()
@@ -140,7 +143,8 @@ class LLMManager:
             self.model = model or openai_model
         self.conversation_history = []
         self.perplexity = None
-        if perplexity_api_key:
+        # Only initialize Perplexity if the feature is enabled and API key is available
+        if use_perplexity and perplexity_api_key:
             self.perplexity = PerplexityTool(
                 api_key=perplexity_api_key,
                 default_model=perplexity_model
@@ -179,74 +183,90 @@ class LLMManager:
             query (str): The search query
             
         Returns:
-            Optional[str]: The search results with citations, or None if unavailable
+            str or None: The search results or None if an error occurred
         """
+        # Check if Perplexity is enabled at the application level
+        if not use_perplexity:
+            print("Warning: Perplexity AI integration is disabled (USE_PERPLEXITY is false)")
+            return "Perplexity AI search is currently disabled in this application."
+            
         if not self.perplexity:
             print("Warning: Perplexity AI not available - PERPLEXITY_API_KEY not set")
-            return None
+            return "Perplexity AI search is not available. Please check your API key configuration."
             
         try:
             return self.perplexity.ask_question(query, model=self.perplexity.default_model)
         except Exception as e:
             print(f"Error searching with Perplexity: {e}")
-            return None
+            return f"Error searching with Perplexity: {str(e)}"
             
     def research_with_perplexity(self, query: str) -> Optional[str]:
         """
         Perform deep research using Perplexity AI's research model.
         
         Args:
-            query (str): The research query to investigate in depth
+            query (str): The research query
             
         Returns:
-            Optional[str]: The research results with citations, or None if unavailable
+            str or None: The research results or None if an error occurred
         """
+        # Check if Perplexity is enabled at the application level
+        if not use_perplexity:
+            print("Warning: Perplexity AI integration is disabled (USE_PERPLEXITY is false)")
+            return "Perplexity AI research is currently disabled in this application."
+            
         if not self.perplexity:
             print("Warning: Perplexity AI not available - PERPLEXITY_API_KEY not set")
-            return None
+            return "Perplexity AI research is not available. Please check your API key configuration."
             
         try:
             return self.perplexity.ask_question(query, model=self.perplexity_research_model)
         except Exception as e:
             print(f"Error researching with Perplexity: {e}")
-            return None
+            return f"Error researching with Perplexity: {str(e)}"
     
     def research_topic(self, query: str) -> Optional[str]:
         """
         Research a topic using Perplexity AI.
         
         This method uses Perplexity AI to gather detailed information and citations
-        about a specific topic or question. It's particularly useful when the LLM
-        needs additional context or up-to-date information.
+        about a specific topic. It's designed for in-depth research queries that
+        require comprehensive and well-cited responses.
         
         Args:
-            query (str): The research query or topic to investigate
+            query (str): The research query
             
         Returns:
-            Optional[str]: The research results with citations, or None if unavailable
+            str or None: The research results or None if an error occurred
         """
+        # Check if Perplexity is enabled at the application level
+        if not use_perplexity:
+            print("Warning: Perplexity AI integration is disabled (USE_PERPLEXITY is false)")
+            return "Perplexity AI research is currently disabled in this application."
+        
         if not self.perplexity:
             print("Warning: Perplexity AI not available - PERPLEXITY_API_KEY not set")
-            return None
+            return "Perplexity AI research is not available. Please check your API key configuration."
             
         try:
-            # Use the deep research model for comprehensive results
+            # Use the research model for more comprehensive results
             return self.perplexity.ask_question(query, model=self.perplexity_research_model)
         except Exception as e:
-            print(f"Error researching topic: {e}")
-            return None
+            print(f"Error researching topic with Perplexity: {e}")
+            return f"Error researching with Perplexity: {str(e)}"
             
-    def generate_response(self, prompt=None, system_prompt=None, research_mode=False):
+    def generate_response(self, prompt=None, system_prompt=None, research_mode=False, is_document_request=False):
         """
         Generate a response from the LLM based on the conversation history.
         
         Args:
-            prompt (str, optional): A new user prompt to add to the conversation
-            system_prompt (str, optional): A system prompt to add to the conversation
+            prompt (str, optional): The user prompt to add to the conversation history
+            system_prompt (str, optional): A system prompt to use for this interaction
             research_mode (bool, optional): Whether to use Perplexity AI for research
+            is_document_request (bool, optional): Whether this is a document-related request
             
         Returns:
-            str: The generated response
+            dict: The response from the LLM, including content and any function calls
         """
         messages = []
         
@@ -263,7 +283,6 @@ class LLMManager:
             
         try:
             # Check if this is a document editing request
-            is_document_request = False
             if system_prompt and any(phrase in system_prompt for phrase in [
                 "summarize or add the content", 
                 "add to the document", 
@@ -273,8 +292,8 @@ class LLMManager:
                 print("Detected document editing request")
             
             # Define available tools based on Perplexity availability
-            tools = []
-            if self.perplexity and not is_document_request:
+            tools = None
+            if use_perplexity and self.perplexity and not is_document_request:
                 tools = [PERPLEXITY_SEARCH_FUNCTION, PERPLEXITY_RESEARCH_FUNCTION]
             
             # Default to auto tool choice
@@ -373,7 +392,10 @@ class LLMManager:
                 self.add_message("user", prompt)
             self.add_message("assistant", response_text)
             
-            return response_text
+            return {
+                "content": response_text,
+                "function_calls": response_message.tool_calls
+            }
         except Exception as e:
             print(f"Error generating LLM response: Use Azure={use_azure}|Model={self.model}|Error={e}")
             return f"Error: {str(e)}"
