@@ -25,17 +25,29 @@ import json
 import httpx
 from typing import Optional, List, Dict, Any
 from openai import OpenAI
+from openai import AzureOpenAI
 from dotenv import load_dotenv
 from tools.perplexity import PerplexityTool
 
 # Load environment variables
 load_dotenv()
 
-# Initialize OpenAI configuration
-openai_api_key = os.getenv("OPENAI_API_KEY")
-openai_model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")  # Default to gpt-3.5-turbo if not specified
-if not openai_api_key:
-    raise ValueError("OPENAI_API_KEY environment variable is not set")
+# Initialize Azure configuration if USE_AZURE is True
+use_azure = os.getenv("USE_AZURE", "false").lower() == "true"
+if use_azure:
+    azure_api_key = os.getenv("AZURE_API_KEY")
+    azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION") #"2024-12-01-preview"
+    azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
+    azure_model = os.getenv("AZURE_MODEL")
+    print(f"API Version from env: '{azure_api_version}'")
+else:
+    # Initialize OpenAI configuration
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    openai_model = os.getenv("OPENAI_MODEL", "gpt-3.5-turbo")  # Default to gpt-3.5-turbo if not specified
+    if not openai_api_key:
+        raise ValueError("OPENAI_API_KEY environment variable is not set")
+
+
 
 # Initialize Perplexity configuration
 perplexity_api_key = os.getenv("PERPLEXITY_API_KEY")
@@ -54,9 +66,13 @@ if not perplexity_api_key:
 # Create a custom httpx client without proxies
 http_client = httpx.Client()
 
-# Initialize OpenAI client with the custom httpx client
-# This avoids the 'proxies' parameter issue in the newer OpenAI SDK
-client = OpenAI(api_key=openai_api_key, http_client=http_client)
+if use_azure:
+    # Initialize Azure client with the custom httpx client
+    client = AzureOpenAI(api_key=azure_api_key,api_version=azure_api_version,azure_endpoint=azure_endpoint,http_client=http_client)
+else:
+    # Initialize OpenAI client with the custom httpx client
+    # This avoids the 'proxies' parameter issue in the newer OpenAI SDK
+    client = OpenAI(api_key=openai_api_key, http_client=http_client)
 
 # Define function schemas for OpenAI function calling
 PERPLEXITY_SEARCH_FUNCTION = {
@@ -118,7 +134,10 @@ class LLMManager:
         Args:
             model (str, optional): The LLM model to use. If not provided, uses OPENAI_MODEL from env
         """
-        self.model = model or openai_model
+        if use_azure:
+            self.model = azure_model
+        else:
+            self.model = model or openai_model
         self.conversation_history = []
         self.perplexity = None
         if perplexity_api_key:
@@ -356,7 +375,7 @@ class LLMManager:
             
             return response_text
         except Exception as e:
-            print(f"Error generating LLM response: {e}")
+            print(f"Error generating LLM response: Use Azure={use_azure}|Model={self.model}|Error={e}")
             return f"Error: {str(e)}"
     
     def generate_markdown_summary(self, markdown_text):
